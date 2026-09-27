@@ -1,1 +1,38 @@
-Unconfirmed 378020.crdownload
+# Ignore student resource zip file
+6ab10eb3b23ba_student_resource.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Models and outputs (large files)
+models/*.pkl
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Data files (optional - uncomment if you don't want to track data)
+# dataset/

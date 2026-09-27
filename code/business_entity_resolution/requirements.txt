@@ -1,0 +1,11 @@
+# Entity Resolution System Requirements
+# Amazon ML Challenge
+
+# Core dependencies
+pandas>=1.5.0
+numpy>=1.23.0
+lightgbm>=3.3.0
+scikit-learn>=1.2.0
+
+# Optional but recommended
+tqdm>=4.65.0  # Progress bars for long operations
