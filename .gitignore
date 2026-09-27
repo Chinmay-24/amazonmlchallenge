@@ -1,5 +1,6 @@
-# Ignore student resource zip file
+# Ignore student resource files
 6ab10eb3b23ba_student_resource.zip
+6ab10eb3b23ba_student_resource/
 
 # Python
 __pycache__/
@@ -35,4 +36,4 @@ Thumbs.db
 *.ipynb
 
 # Data files (optional - uncomment if you don't want to track data)
-# dataset/
+dataset/

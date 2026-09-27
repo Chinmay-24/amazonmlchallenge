@@ -18,12 +18,13 @@ class DataLoader:
     def __init__(self, data_dir: str = "dataset"):
         self.data_dir = data_dir
         
-    def load_source_data(self, split: str = "train") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def load_source_data(self, split: str = "train", nrows: int = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Load source data files.
         
         Args:
             split: Either 'train' or 'test'
+            nrows: Optional number of rows to load (for faster testing)
             
         Returns:
             Tuple of (source1_df, source2_df, source3_df)
@@ -34,19 +35,22 @@ class DataLoader:
             os.path.join(base_path, f"{split}_source1.tsv"), 
             sep="\t", 
             dtype=str,
-            keep_default_na=False
+            keep_default_na=False,
+            nrows=nrows
         )
         source2 = pd.read_csv(
             os.path.join(base_path, f"{split}_source2.tsv"), 
             sep="\t", 
             dtype=str,
-            keep_default_na=False
+            keep_default_na=False,
+            nrows=nrows
         )
         source3 = pd.read_csv(
             os.path.join(base_path, f"{split}_source3.tsv"), 
             sep="\t", 
             dtype=str,
-            keep_default_na=False
+            keep_default_na=False,
+            nrows=nrows
         )
         
         logger.info(f"Loaded {split} data: S1={len(source1)}, S2={len(source2)}, S3={len(source3)}")
@@ -89,22 +93,34 @@ class DataLoader:
         
         return text
     
-    def preprocess_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    def preprocess_dataframe(self, df: pd.DataFrame, countries_filter: set = None) -> pd.DataFrame:
         """
         Preprocess a source dataframe.
         
         Args:
             df: Source dataframe
+            countries_filter: Optional set of countries to filter by (for optimization)
             
         Returns:
             Preprocessed dataframe with additional columns
         """
         df = df.copy()
         
-        # Create preprocessed versions
-        df['business_name_clean'] = df['business_name'].apply(self.preprocess_text)
-        df['business_address_clean'] = df['business_address'].apply(self.preprocess_text)
-        df['country_clean'] = df['country'].apply(self.preprocess_text)
+        # Early filtering by country if specified (huge speedup)
+        if countries_filter is not None:
+            initial_len = len(df)
+            df['country_clean'] = df['country'].apply(self.preprocess_text)
+            df = df[df['country_clean'].isin(countries_filter)]
+            logger.info(f"Country filter: {initial_len} → {len(df)} records ({100*len(df)/initial_len:.1f}% kept)")
+            
+            # Create preprocessed versions (only for filtered records)
+            df['business_name_clean'] = df['business_name'].apply(self.preprocess_text)
+            df['business_address_clean'] = df['business_address'].apply(self.preprocess_text)
+        else:
+            # Create preprocessed versions
+            df['business_name_clean'] = df['business_name'].apply(self.preprocess_text)
+            df['business_address_clean'] = df['business_address'].apply(self.preprocess_text)
+            df['country_clean'] = df['country'].apply(self.preprocess_text)
         
         # Extract tokens for blocking
         df['name_tokens'] = df['business_name_clean'].apply(

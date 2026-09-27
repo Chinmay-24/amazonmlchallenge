@@ -516,6 +516,7 @@ class FeatureEngineer:
         logger.info(f"Generating features for {len(pairs)} pairs...")
         
         features_list = []
+        log_interval = max(1000, len(pairs) // 10)  # Log every 10% or 1000 records
         
         for idx, row in pairs.iterrows():
             s1_id = row['s1_id']
@@ -536,8 +537,9 @@ class FeatureEngineer:
             
             features_list.append(features)
             
-            if (idx + 1) % 10000 == 0:
-                logger.info(f"  Processed {idx + 1} / {len(pairs)} pairs")
+            if (idx + 1) % log_interval == 0:
+                pct = 100 * (idx + 1) / len(pairs)
+                logger.info(f"  Progress: {idx + 1:,} / {len(pairs):,} pairs ({pct:.1f}%)")
         
         features_df = pd.DataFrame(features_list)
         

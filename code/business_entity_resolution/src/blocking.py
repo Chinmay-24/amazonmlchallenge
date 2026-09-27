@@ -130,21 +130,26 @@ class BlockingStrategy:
         """
         candidates = defaultdict(set)
         
-        # Group by country
-        combined_by_country = combined.groupby('country_clean')['entity_id'].apply(set).to_dict()
+        # Group by country - but don't add all at once to avoid memory error
+        combined_by_country = combined.groupby('country_clean')['entity_id'].apply(list).to_dict()
         
-        for _, s1_row in source1.iterrows():
+        total_candidates_added = 0
+        for idx, (_, s1_row) in enumerate(source1.iterrows()):
             s1_id = s1_row['entity_id']
             country = s1_row['country_clean']
             
             # Get all entities from same country
             if country in combined_by_country:
-                candidates[s1_id].update(combined_by_country[country])
+                # Convert list to set only when needed to save memory
+                candidates[s1_id] = set(combined_by_country[country])
+                total_candidates_added += len(candidates[s1_id])
+            
+            if (idx + 1) % 10000 == 0:
+                logger.info(f"  Processed {idx + 1:,} / {len(source1):,} S1 entities")
         
-        total_candidates = sum(len(v) for v in candidates.values())
-        avg_candidates = total_candidates / len(source1) if len(source1) > 0 else 0
+        avg_candidates = total_candidates_added / len(source1) if len(source1) > 0 else 0
         
-        logger.info(f"Country blocking: {total_candidates} total candidates, "
+        logger.info(f"Country blocking: {total_candidates_added:,} total candidates, "
                    f"avg {avg_candidates:.1f} per S1 entity")
         
         return candidates
@@ -294,40 +299,47 @@ class BlockingStrategy:
         
         logger.info(f"Generating candidates for {len(source1)} S1 entities "
                    f"against {len(combined)} S2+S3 entities")
+        logger.info(f"(Country filtering already reduced S2+S3 from original size)")
         
         # Initialize with empty sets
         all_candidates = {row['entity_id']: set() for _, row in source1.iterrows()}
         
         # Strategy 1: Country blocking (if enabled)
         if self.use_country_blocking:
+            logger.info("Running Strategy 1: Country blocking...")
             country_candidates = self.country_blocking(source1, combined)
             for s1_id, cands in country_candidates.items():
                 all_candidates[s1_id].update(cands)
         
         # Strategy 2: Token blocking on business name
         if self.use_token_blocking:
+            logger.info("Running Strategy 2: Token blocking (name)...")
             token_name_candidates = self.token_blocking(source1, combined, 'business_name_clean')
             for s1_id, cands in token_name_candidates.items():
                 all_candidates[s1_id].update(cands)
             
             # Token blocking on address
+            logger.info("Running Strategy 3: Token blocking (address)...")
             token_addr_candidates = self.token_blocking(source1, combined, 'business_address_clean')
             for s1_id, cands in token_addr_candidates.items():
                 all_candidates[s1_id].update(cands)
         
         # Strategy 3: N-gram blocking on business name
         if self.use_ngram_blocking:
+            logger.info("Running Strategy 4: N-gram blocking...")
             ngram_candidates = self.ngram_blocking(source1, combined, 'business_name_clean')
             for s1_id, cands in ngram_candidates.items():
                 all_candidates[s1_id].update(cands)
         
         # Strategy 4: Phonetic blocking
         if self.use_phonetic_blocking:
+            logger.info("Running Strategy 5: Phonetic blocking...")
             phonetic_candidates = self.phonetic_blocking(source1, combined)
             for s1_id, cands in phonetic_candidates.items():
                 all_candidates[s1_id].update(cands)
         
         # Convert sets to sorted lists
+        logger.info("Finalizing candidate lists...")
         final_candidates = {k: sorted(list(v)) for k, v in all_candidates.items()}
         
         # Statistics

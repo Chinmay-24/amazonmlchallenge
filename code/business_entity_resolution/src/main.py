@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 def train_pipeline(data_dir: str = "dataset",
                   model_path: str = "models/entity_matching_model.pkl",
                   use_validation_split: bool = True,
-                  optimize_threshold: bool = True):
+                  optimize_threshold: bool = True,
+                  sample_size: int = None):
     """
     Train the entity matching model.
     
@@ -44,10 +45,10 @@ def train_pipeline(data_dir: str = "dataset",
     # Initialize components
     loader = DataLoader(data_dir)
     blocker = BlockingStrategy(
-        use_country_blocking=True,
+        use_country_blocking=False,  # Memory issue
         use_token_blocking=True,
         use_ngram_blocking=True,
-        use_phonetic_blocking=True
+        use_phonetic_blocking=False
     )
     engineer = FeatureEngineer()
     model = EntityMatchingModel()
@@ -57,11 +58,25 @@ def train_pipeline(data_dir: str = "dataset",
     s1_train, s2_train, s3_train = loader.load_source_data("train")
     gt_train = loader.load_ground_truth()
     
+    # Sample for faster training if requested
+    if sample_size:
+        logger.info(f"Sampling {sample_size} entities from Source 1 for faster training...")
+        s1_train = s1_train.sample(n=min(sample_size, len(s1_train)), random_state=42)
+        sampled_ids = set(s1_train['entity_id'])
+        gt_train = gt_train[gt_train['source1_entity_id'].isin(sampled_ids)]
+        logger.info(f"Training on {len(s1_train)} Source 1 entities")
+    
     # Preprocess
     logger.info("\n[2/7] Preprocessing data...")
     s1_train = loader.preprocess_dataframe(s1_train)
-    s2_train = loader.preprocess_dataframe(s2_train)
-    s3_train = loader.preprocess_dataframe(s3_train)
+    
+    # Get countries from sampled S1 for filtering (OPTIMIZATION)
+    s1_countries = set(s1_train['country_clean'].unique())
+    logger.info(f"Countries in S1 sample: {s1_countries}")
+    
+    # Only preprocess S2/S3 records in same countries (5-10x speedup)
+    s2_train = loader.preprocess_dataframe(s2_train, countries_filter=s1_countries)
+    s3_train = loader.preprocess_dataframe(s3_train, countries_filter=s1_countries)
     
     # Parse ground truth
     gt_dict = loader.parse_ground_truth(gt_train)
@@ -173,10 +188,10 @@ def inference_pipeline(data_dir: str = "dataset",
     # Initialize components
     loader = DataLoader(data_dir)
     blocker = BlockingStrategy(
-        use_country_blocking=True,
+        use_country_blocking=False,  # Memory issue
         use_token_blocking=True,
         use_ngram_blocking=True,
-        use_phonetic_blocking=True
+        use_phonetic_blocking=False
     )
     engineer = FeatureEngineer()
     model = EntityMatchingModel()
@@ -217,10 +232,11 @@ def inference_pipeline(data_dir: str = "dataset",
     
     if inference_pairs:
         pairs_df = pd.DataFrame(inference_pairs)
-        logger.info(f"Created {len(pairs_df)} candidate pairs for inference")
+        logger.info(f"Created {len(pairs_df):,} candidate pairs for inference")
         
         # Generate features
         logger.info("\n[5/6] Generating features and running inference...")
+        logger.info("This may take a while for large datasets...")
         features_df = engineer.generate_features_for_pairs(pairs_df, s1_test, combined_test)
         
         # Run inference
@@ -275,7 +291,8 @@ def inference_pipeline(data_dir: str = "dataset",
 
 def full_pipeline(data_dir: str = "dataset",
                  model_path: str = "models/entity_matching_model.pkl",
-                 output_dir: str = "output"):
+                 output_dir: str = "output",
+                 sample_size: int = None):
     """
     Run full pipeline: train -> inference -> output.
     
@@ -289,7 +306,7 @@ def full_pipeline(data_dir: str = "dataset",
     logger.info("=" * 80)
     
     # Train
-    train_pipeline(data_dir, model_path)
+    train_pipeline(data_dir, model_path, sample_size=sample_size)
     
     # Inference
     inference_pipeline(data_dir, model_path, output_dir)
@@ -334,16 +351,22 @@ def main():
         default='output',
         help='Directory to save output files (default: output)'
     )
+    parser.add_argument(
+        '--sample-size',
+        type=int,
+        default=None,
+        help='Sample size for training (e.g., 10000 for faster training, None for full dataset)'
+    )
     
     args = parser.parse_args()
     
     try:
         if args.mode == 'train':
-            train_pipeline(args.data_dir, args.model_path)
+            train_pipeline(args.data_dir, args.model_path, sample_size=args.sample_size)
         elif args.mode == 'inference':
             inference_pipeline(args.data_dir, args.model_path, args.output_dir)
         else:  # full
-            full_pipeline(args.data_dir, args.model_path, args.output_dir)
+            full_pipeline(args.data_dir, args.model_path, args.output_dir, sample_size=args.sample_size)
     
     except Exception as e:
         logger.error(f"Pipeline failed with error: {e}", exc_info=True)
